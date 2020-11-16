@@ -3,26 +3,51 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using CommandLine;
 
 namespace RptToXml
 {
 	class Program
 	{
+		class Options
+		{
+
+			[Value(0, Min = 1, Max = 2, MetaName = "<RPT filename | wildcard> [outputfilename]", 
+				HelpText = "outputfilename argument is valid only with single filename in first argument")]
+			public IEnumerable<string> Files { get; set; }
+
+			[Option('r', "recursive", Required = false, Default = false, HelpText = "Recursive search in directory")]
+			public bool Recursive { get; set; }
+
+		}
 		static void Main(string[] args)
 		{
 			if (args.Length < 1)
 			{
 				Console.WriteLine("Usage: RptToXml.exe <RPT filename | wildcard> [outputfilename]");
-				Console.WriteLine("       outputfilename argument is valid only with single filename in first argument");
+				Console.WriteLine("      ");
 				return;
 			}
 
-			string rptPathArg = args[0];
+			CommandLine.Parser.Default.ParseArguments<Options>(args)
+			.WithParsed(RunOptions)
+			.WithNotParsed(HandleParseError);
+		}
+
+		static void HandleParseError(IEnumerable<Error> errs)
+		{
+			Console.WriteLine("Argument parsing error");
+			Console.WriteLine(errs);
+		}
+
+		static void RunOptions(Options opts)
+		{
+			string rptPathArg = opts.Files.First();
 			bool wildCard = rptPathArg.Contains("*");
 			if (!wildCard && !ReportFilenameValid(rptPathArg))
 				return;
 
-			if (wildCard && args.Length > 1)
+			if (wildCard && opts.Files.Count() > 1)
 			{
 				Console.WriteLine("Output filename may not be specified with wildcard.");
 				return;
@@ -42,7 +67,14 @@ namespace RptToXml
                 {
                     directory = ".";
                 }
-                var matchingFiles = Directory.GetFiles(directory, searchPattern: Path.GetFileName(rptPathArg));
+
+				SearchOption searchOption = SearchOption.TopDirectoryOnly;
+				if (opts.Recursive)
+				{
+					searchOption = SearchOption.AllDirectories;
+				}
+
+                var matchingFiles = Directory.GetFiles(directory, searchPattern: Path.GetFileName(rptPathArg), searchOption: searchOption);
                 rptPaths.AddRange(matchingFiles.Where(ReportFilenameValid));
 			}
 
@@ -57,8 +89,8 @@ namespace RptToXml
 
 				using (var writer = new RptDefinitionWriter(rptPath))
 				{
-					string xmlPath = args.Length > 1 ?
-						args[1] : Path.ChangeExtension(rptPath, "xml");
+					string xmlPath = opts.Files.Count() > 1 ?
+						opts.Files.ElementAt(1) : Path.ChangeExtension(rptPath, "xml");
 					writer.WriteToXml(xmlPath);
 				}
 			}
